@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\AuditLogController;
+use App\Http\Controllers\Api\UserController;
 
 Route::prefix('v1')->group(function () {
 
@@ -56,6 +57,15 @@ Route::prefix('v1')->group(function () {
             Route::get('/customers/{customer}',        [CustomerController::class, 'show']);
             Route::get('/reports/financial',           [PaymentController::class, 'financialReport']);
             Route::get('/logs',                        [AuditLogController::class, 'index']);
+
+            // User management
+            Route::get('/users',              [UserController::class, 'index']);
+            Route::post('/users',             [UserController::class, 'store']);
+            Route::get('/users/{user}',       [UserController::class, 'show']);
+            Route::put('/users/{user}',       [UserController::class, 'update']);
+            Route::delete('/users/{user}',    [UserController::class, 'destroy']);
+
+            // Vehicles
             Route::post('/vehicles',                   [VehicleController::class, 'store']);
             Route::put('/vehicles/{vehicle}',          [VehicleController::class, 'update']);
             Route::delete('/vehicles/{vehicle}',       [VehicleController::class, 'destroy']);
