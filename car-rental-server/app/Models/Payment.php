@@ -13,6 +13,7 @@ class Payment extends Model
         'method',
         'status',
         'amount',
+        'payment_type',
         'gateway_fee',
         'net_amount',
         'currency',

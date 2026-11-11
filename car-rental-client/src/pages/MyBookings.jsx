@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import api from '../lib/api'
 
@@ -13,11 +14,54 @@ const STATUS_COLORS = {
   no_show:   'bg-orange-100 text-orange-700',
 }
 
+const CANCELLABLE_STATUSES = ['pending', 'confirmed', 'active']
+
 export default function MyBookings() {
+  const queryClient = useQueryClient()
+  const [cancellingId, setCancellingId] = useState(null)
+  const [errorMessage, setErrorMessage] = useState(null)
+
   const { data, isLoading } = useQuery({
     queryKey: ['my-bookings'],
     queryFn: () => api.get('/bookings').then(r => r.data),
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
+
+  const cancelMutation = useMutation({
+    mutationFn: (bookingId) => api.patch(`/bookings/${bookingId}/cancel`),
+    onMutate: (bookingId) => {
+      setCancellingId(bookingId)
+      setErrorMessage(null)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-bookings'] })
+    },
+    onError: (err) => {
+      setErrorMessage(err.response?.data?.message || 'Failed to cancel booking. Please try again.')
+    },
+    onSettled: () => {
+      setCancellingId(null)
+    },
+  })
+
+  const handleCancel = (booking) => {
+    const pickupDate = new Date(booking.pickup_datetime)
+    const hoursUntilPickup = (pickupDate - new Date()) / (1000 * 60 * 60)
+    const isLate = hoursUntilPickup < 24
+    const isActive = booking.status === 'active'
+
+    let warning = `Cancel your booking for "${booking.vehicle?.make} ${booking.vehicle?.model}" (${booking.booking_ref})?`
+    if (isActive) {
+      warning = `This rental is already active and paid. Cancelling now will affect your reliability score, and any refund will need to be handled separately.\n\nCancel "${booking.vehicle?.make} ${booking.vehicle?.model}" (${booking.booking_ref})?`
+    } else if (isLate) {
+      warning = `This pickup is less than 24 hours away. Cancelling now may affect your reliability score.\n\nCancel "${booking.vehicle?.make} ${booking.vehicle?.model}" (${booking.booking_ref})?`
+    }
+
+    if (window.confirm(warning)) {
+      cancelMutation.mutate(booking.id)
+    }
+  }
 
   if (isLoading) return <p className="text-gray-400 text-sm text-center py-16">Loading your bookings...</p>
 
@@ -30,6 +74,13 @@ export default function MyBookings() {
         <Link to="/vehicles" className="btn-primary text-sm">+ New booking</Link>
       </div>
 
+      {errorMessage && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-center justify-between">
+          <span>{errorMessage}</span>
+          <button onClick={() => setErrorMessage(null)} className="text-red-400 hover:text-red-600 ml-3">✕</button>
+        </div>
+      )}
+
       {bookings.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <div className="text-5xl mb-3">📋</div>
@@ -40,8 +91,6 @@ export default function MyBookings() {
         <div className="space-y-4">
           {bookings.map(booking => (
             <div key={booking.id} className="card flex flex-col sm:flex-row sm:items-center gap-4">
-
-              {/* Vehicle image */}
               <div className="w-20 h-16 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center text-3xl flex-shrink-0">
                 {booking.vehicle?.image_path ? (
                   <img
@@ -84,6 +133,15 @@ export default function MyBookings() {
                   className="btn-secondary text-xs px-3 py-1.5">
                   Invoice
                 </a>
+                {CANCELLABLE_STATUSES.includes(booking.status) && (
+                  <button
+                    onClick={() => handleCancel(booking)}
+                    disabled={cancellingId === booking.id}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {cancellingId === booking.id ? 'Cancelling...' : 'Cancel'}
+                  </button>
+                )}
               </div>
             </div>
           ))}

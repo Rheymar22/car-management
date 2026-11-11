@@ -19,11 +19,14 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Handle 401 — clear storage and redirect to login
+// Handle 401 — clear storage and redirect to login,
+// but NOT when the failing request is the login/register attempt itself
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isAuthEndpoint = error.config?.url?.includes('/login') || error.config?.url?.includes('/register')
+
+    if (error.response?.status === 401 && !isAuthEndpoint) {
       localStorage.removeItem('auth-storage')
       window.location.href = '/login'
     }

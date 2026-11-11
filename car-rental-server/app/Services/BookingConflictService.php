@@ -15,7 +15,7 @@ class BookingConflictService
     public function hasConflict(int $vehicleId, Carbon $start, Carbon $end, ?int $excludeId = null): bool
     {
         return Booking::where('vehicle_id', $vehicleId)
-            ->whereIn('status', ['confirmed', 'active'])
+            ->whereIn('status', ['pending', 'confirmed', 'active'])
             ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
             ->where(function ($q) use ($start, $end) {
                 $q->whereBetween('pickup_datetime', [$start, $end])
@@ -52,7 +52,7 @@ class BookingConflictService
                 'user_id'                  => $user->id,
                 'vehicle_id'               => $vehicleId,
                 'customer_id'              => $user->customerProfile?->id,
-                'status'                   => 'confirmed',
+                'status'                   => 'pending',
                 'pickup_datetime'          => $start,
                 'dropoff_datetime'         => $end,
                 'pickup_location'          => $data['pickup_location'],

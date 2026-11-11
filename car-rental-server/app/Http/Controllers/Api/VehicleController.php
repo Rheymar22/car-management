@@ -12,23 +12,19 @@ use Illuminate\Validation\Rule;
 
 class VehicleController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
+        $perPage = $request->integer('per_page', 12);
+
         $vehicles = Vehicle::select([
-            'id',
-            'make',
-            'model',
-            'year',
-            'type',
-            'plate_number',
-            'daily_rate',
-            'hourly_rate',
-            'weekly_rate',
-            'status',
-            'image_path',
-            'features',
-            'color'
-        ])->paginate(12);
+            'id', 'make', 'model', 'year', 'type', 'plate_number',
+            'daily_rate', 'hourly_rate', 'weekly_rate', 'status',
+            'image_path', 'features', 'color'
+        ])
+            ->when($request->filled('type'), fn($q) => $q->where('type', $request->input('type')))
+            ->when($request->filled('status'), fn($q) => $q->where('status', $request->input('status')))
+            ->paginate($perPage);
+
         return response()->json($vehicles);
     }
 
@@ -51,19 +47,9 @@ class VehicleController extends Controller
         $vehicles = Vehicle::availableBetween($start, $end)
             ->when($request->type, fn($q) => $q->where('type', $request->type))
             ->select([
-                'id',
-                'make',
-                'model',
-                'year',
-                'type',
-                'plate_number',
-                'daily_rate',
-                'hourly_rate',
-                'weekly_rate',
-                'status',
-                'image_path',
-                'features',
-                'color'
+                'id', 'make', 'model', 'year', 'type', 'plate_number',
+                'daily_rate', 'hourly_rate', 'weekly_rate', 'status',
+                'image_path', 'features', 'color'
             ])
             ->paginate(12);
 
@@ -86,12 +72,11 @@ class VehicleController extends Controller
             'image'        => ['nullable', 'image', 'mimes:jpeg,png,webp', 'max:2048'],
         ]);
 
-        // Handle image upload
         if ($request->hasFile('image')) {
             $data['image_path'] = $request->file('image')->store('vehicles', 'public');
         }
 
-        unset($data['image']); // remove from data before create
+        unset($data['image']);
         $vehicle = Vehicle::create($data);
         return response()->json(['vehicle' => $vehicle], 201);
     }
@@ -103,7 +88,8 @@ class VehicleController extends Controller
             'model'       => ['sometimes', 'string'],
             'year'        => ['sometimes', 'integer', 'min:2000', 'max:2030'],
             'color'       => ['sometimes', 'string'],
-            'type' => ['nullable', Rule::in(['sedan', 'suv', 'van', 'sports car', 'truck', 'pickup', 'minivan'])],            'plate_number' => ['sometimes', 'string', Rule::unique('vehicles')->ignore($vehicle->id)],
+            'type' => ['nullable', Rule::in(['sedan', 'suv', 'van', 'sports car', 'truck', 'pickup', 'minivan'])],
+            'plate_number' => ['sometimes', 'string', Rule::unique('vehicles')->ignore($vehicle->id)],
             'daily_rate'  => ['sometimes', 'numeric', 'min:0'],
             'hourly_rate' => ['nullable', 'numeric', 'min:0'],
             'weekly_rate' => ['nullable', 'numeric', 'min:0'],
@@ -111,7 +97,6 @@ class VehicleController extends Controller
             'image'       => ['nullable', 'image', 'mimes:jpeg,png,webp', 'max:2048'],
         ]);
 
-        // Handle image upload — delete old image first
         if ($request->hasFile('image')) {
             if ($vehicle->image_path) {
                 Storage::disk('public')->delete($vehicle->image_path);
@@ -139,7 +124,6 @@ class VehicleController extends Controller
 
     public function destroy(Vehicle $vehicle): JsonResponse
     {
-        // Delete image from storage when vehicle is deleted
         if ($vehicle->image_path) {
             Storage::disk('public')->delete($vehicle->image_path);
         }

@@ -16,9 +16,12 @@ Route::prefix('v1')->group(function () {
     // Public
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login',    [AuthController::class, 'login']);
-
-    // PayMongo webhook — no auth
     Route::post('/webhooks/paymongo', [WebhookController::class, 'paymongo']);
+
+    // Public vehicle browsing
+    Route::get('/vehicles/available', [VehicleController::class, 'available']);
+    Route::get('/vehicles',           [VehicleController::class, 'index']);
+    Route::get('/vehicles/{vehicle}', [VehicleController::class, 'show']);
 
     // Protected
     Route::middleware('auth:sanctum')->group(function () {
@@ -26,15 +29,11 @@ Route::prefix('v1')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/me',      [AuthController::class, 'me']);
 
-        // Vehicles
-        Route::get('/vehicles/available', [VehicleController::class, 'available']);
-        Route::get('/vehicles',           [VehicleController::class, 'index']);
-        Route::get('/vehicles/{vehicle}', [VehicleController::class, 'show']);
-
         // Bookings
         Route::get('/bookings',                      [BookingController::class, 'index']);
         Route::post('/bookings',                     [BookingController::class, 'store']);
         Route::get('/bookings/{booking}',            [BookingController::class, 'show']);
+        Route::patch('/bookings/{booking}/confirm',  [BookingController::class, 'confirm']);
         Route::patch('/bookings/{booking}/complete', [BookingController::class, 'complete']);
         Route::patch('/bookings/{booking}/cancel',   [BookingController::class, 'cancel']);
 
@@ -58,14 +57,12 @@ Route::prefix('v1')->group(function () {
             Route::get('/reports/financial',           [PaymentController::class, 'financialReport']);
             Route::get('/logs',                        [AuditLogController::class, 'index']);
 
-            // User management
             Route::get('/users',              [UserController::class, 'index']);
             Route::post('/users',             [UserController::class, 'store']);
             Route::get('/users/{user}',       [UserController::class, 'show']);
             Route::put('/users/{user}',       [UserController::class, 'update']);
             Route::delete('/users/{user}',    [UserController::class, 'destroy']);
 
-            // Vehicles
             Route::post('/vehicles',                   [VehicleController::class, 'store']);
             Route::put('/vehicles/{vehicle}',          [VehicleController::class, 'update']);
             Route::delete('/vehicles/{vehicle}',       [VehicleController::class, 'destroy']);

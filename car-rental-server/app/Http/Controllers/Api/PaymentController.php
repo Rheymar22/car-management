@@ -12,7 +12,10 @@ class PaymentController extends Controller
 {
     public function simulate(Request $request): JsonResponse
     {
-        $request->validate(['booking_id' => ['required', 'exists:bookings,id']]);
+        $request->validate([
+            'booking_id'   => ['required', 'exists:bookings,id'],
+            'payment_type' => ['required', 'in:full,down_payment'],
+        ]);
 
         $booking = Booking::findOrFail($request->booking_id);
 
@@ -20,17 +23,37 @@ class PaymentController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
+        if ($booking->status !== 'confirmed') {
+            return response()->json(['message' => 'This booking is not awaiting payment.'], 422);
+        }
+
+        $amount = $request->payment_type === 'down_payment'
+            ? round($booking->total_amount * 0.5, 2)
+            : (float) $booking->total_amount;
+
         $booking->payments()->create([
-            'amount'         => $booking->total_amount,
-            'method'         => $request->input('method', 'simulated'),
-            'status'         => 'paid',
-            'transaction_id' => 'SIM-' . strtoupper(uniqid()),
-            'paid_at'        => now(),
+            'paymongo_payment_id' => 'SIM-' . strtoupper(uniqid()),
+            'method'              => $request->input('method', 'simulated'),
+            'status'              => 'paid',
+            'amount'              => $amount,
+            'gateway_fee'         => 0,
+            'net_amount'          => $amount,
+            'currency'            => 'PHP',
+            'payment_type'        => $request->payment_type,
+            'paid_at'             => now(),
         ]);
 
-        $booking->update(['status' => 'confirmed']);
+        $booking->update(['status' => 'active']);
 
-        return response()->json(['message' => 'Payment simulated successfully.']);
+        $balance = round($booking->total_amount - $amount, 2);
+
+        return response()->json([
+            'message' => $request->payment_type === 'down_payment'
+                ? 'Down payment of ₱' . number_format($amount, 2) . ' received. Remaining balance of ₱' . number_format($balance, 2) . ' is due at pickup/return.'
+                : 'Full payment received.',
+            'amount_paid' => $amount,
+            'balance_due' => $balance,
+        ]);
     }
 
     public function createIntent(Request $request, PayMongoService $paymongo): JsonResponse

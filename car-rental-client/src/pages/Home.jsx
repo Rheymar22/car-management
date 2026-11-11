@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useAuthStore } from "../hooks/useAuth";
+import FacebookPageWidget from "../components/FacebookPageWidget";
 
 const DEFAULT_HERO_BG = "/MRPAT%20bg.jpg";
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -396,6 +397,20 @@ export default function Home() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── FACEBOOK / SOCIAL ── */}
+      <section style={{ ...s.section, background: "#fff" }}>
+        <div style={s.container}>
+          <div style={s.sectionHeader}>
+            <span style={s.sectionTag}>Stay connected</span>
+            <h2 style={s.sectionTitle}>Follow us on Facebook</h2>
+            <p style={s.sectionDesc}>Get the latest promos, fleet updates, and behind-the-scenes from MR.PAT Car Rental Service.</p>
+          </div>
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <FacebookPageWidget />
           </div>
         </div>
       </section>

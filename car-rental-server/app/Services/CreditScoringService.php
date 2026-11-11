@@ -34,7 +34,7 @@ class CreditScoringService
                 if ($minutesLate > 30) $lateReturns++;
             }
 
-            if ($booking->late_penalty > 1000) $damageIncidents++;
+            if ($booking->has_damage) $damageIncidents++;
             if ($booking->status === 'no_show') $noShows++;
 
             $firstPayment = $booking->payments->where('status', 'paid')->first();

@@ -5,7 +5,17 @@ import api from "../lib/api";
 
 const TYPES = ["", "sedan", "suv", "van", "motorcycle", "truck"];
 
+const STATUS_META = {
+  available: { label: "Available", className: "bg-green-100 text-green-700" },
+  rented: { label: "Rented", className: "bg-blue-100 text-blue-700" },
+  maintenance: { label: "Maintenance", className: "bg-yellow-100 text-yellow-700" },
+  retired: { label: "Retired", className: "bg-gray-100 text-gray-600" },
+};
+
 function VehicleCard({ vehicle, start, end }) {
+  const meta = STATUS_META[vehicle.status] || STATUS_META.retired;
+  const isAvailable = vehicle.status === "available";
+
   return (
     <div className="card hover:shadow-md transition-shadow">
       <div className="bg-gray-100 rounded-xl h-40 flex items-center justify-center mb-3 text-5xl overflow-hidden">
@@ -45,8 +55,8 @@ function VehicleCard({ vehicle, start, end }) {
             {vehicle.year} • {vehicle.color} • {vehicle.type.toUpperCase()}
           </p>
         </div>
-        <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
-          Available
+        <span className={`text-xs px-2 py-1 rounded-full ${meta.className}`}>
+          {meta.label}
         </span>
       </div>
       <p className="text-xs text-gray-400 mb-3">{vehicle.plate_number}</p>
@@ -69,19 +79,23 @@ function VehicleCard({ vehicle, start, end }) {
           </span>
           <span className="text-xs text-gray-500">/day</span>
         </div>
-        <Link
-          to={
-            "/bookings/new?vehicle=" +
-            vehicle.id +
-            "&start=" +
-            (start || "") +
-            "&end=" +
-            (end || "")
-          }
-          className="btn-primary text-xs px-3 py-1.5"
-        >
-          Book now
-        </Link>
+        {isAvailable ? (
+          <Link
+            to={
+              "/bookings/new?vehicle=" +
+              vehicle.id +
+              "&start=" +
+              (start || "") +
+              "&end=" +
+              (end || "")
+            }
+            className="btn-primary text-xs px-3 py-1.5"
+          >
+            Book now
+          </Link>
+        ) : (
+          <span className="text-xs text-gray-400 px-3 py-1.5">Unavailable</span>
+        )}
       </div>
     </div>
   );

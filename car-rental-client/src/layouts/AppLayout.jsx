@@ -3,6 +3,7 @@ import { useAuthStore } from '../hooks/useAuth'
 
 const ADMIN_NAV = [
   { to: '/admin',           label: 'Dashboard',     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.4"/></svg> },
+  { to: '/admin/analytics', label: 'Analytics',     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 14V2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M2 14h12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><rect x="4" y="8" width="2" height="4" rx="0.5" fill="currentColor"/><rect x="7.5" y="5" width="2" height="7" rx="0.5" fill="currentColor"/><rect x="11" y="3" width="2" height="9" rx="0.5" fill="currentColor"/></svg> },
   { to: '/admin/bookings',  label: 'Bookings',      icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="13" rx="2" stroke="currentColor" strokeWidth="1.4"/><path d="M5 6h6M5 9h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg> },
   { to: '/admin/vehicles',  label: 'Vehicles',      icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 10l1.5-4a2 2 0 011.9-1.3h5.2a2 2 0 011.9 1.3L14 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><rect x="1" y="10" width="14" height="4" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><circle cx="4.5" cy="12" r="1" fill="currentColor"/><circle cx="11.5" cy="12" r="1" fill="currentColor"/></svg> },
   { to: '/admin/customers', label: 'Customers',     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="6" cy="5" r="2.5" stroke="currentColor" strokeWidth="1.4"/><path d="M1 14c0-2.76 2.24-4 5-4s5 1.24 5 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M12 7c1.1 0 2 .9 2 2s-.9 2-2 2M14 14c0-1.5-1-2.5-2-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg> },
@@ -33,11 +34,8 @@ export default function AppLayout() {
 
   return (
     <div className="al-root">
-      {/* Top navigation bar */}
       <nav className="al-nav">
         <div className="al-nav-inner">
-
-          {/* Logo */}
           <Link to={isAdmin() ? '/admin' : '/vehicles'} className="al-logo">
             <img src="/MRPAT pfp.jpg" alt="Roxas Car Rental" className="al-logo-img"
               onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex' }} />
@@ -55,7 +53,6 @@ export default function AppLayout() {
             </div>
           </Link>
 
-          {/* Desktop nav links */}
           <div className="al-nav-links">
             {nav.map(n => (
               <Link key={n.to} to={n.to}
@@ -66,7 +63,6 @@ export default function AppLayout() {
             ))}
           </div>
 
-          {/* Right side */}
           <div className="al-nav-right">
             <div className="al-user-info">
               <div className="al-avatar">{user?.name?.charAt(0)?.toUpperCase() || '?'}</div>
@@ -85,7 +81,6 @@ export default function AppLayout() {
         </div>
       </nav>
 
-      {/* Mobile bottom nav */}
       <nav className="al-bottom-nav">
         {nav.map(n => (
           <Link key={n.to} to={n.to}
@@ -104,7 +99,6 @@ export default function AppLayout() {
         </button>
       </nav>
 
-      {/* Main content */}
       <main className="al-main">
         <div className="al-content">
           <Outlet />

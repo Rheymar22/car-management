@@ -16,6 +16,7 @@ const STATUS_COLORS = {
   active:    'bg-green-100 text-green-700',
   completed: 'bg-gray-100 text-gray-600',
   cancelled: 'bg-red-100 text-red-600',
+  no_show:   'bg-orange-100 text-orange-700',
 }
 
 export default function AdminDashboard() {
@@ -29,12 +30,16 @@ export default function AdminDashboard() {
     queryFn: () => api.get('/vehicles').then(r => r.data),
   })
 
+  const { data: financialData } = useQuery({
+    queryKey: ['admin-financial-report'],
+    queryFn: () => api.get('/admin/reports/financial').then(r => r.data),
+  })
+
   const bookings = bookingsData?.data ?? []
   const vehicles = vehiclesData?.data ?? []
+  const financialReport = financialData?.report ?? []
 
-  const totalRevenue = bookings
-    .filter(b => b.status === 'completed')
-    .reduce((sum, b) => sum + Number(b.total_amount), 0)
+  const totalRevenue = financialReport.reduce((sum, r) => sum + Number(r.total || 0), 0)
 
   const activeCount    = bookings.filter(b => b.status === 'active').length
   const availableCount = vehicles.filter(v => v.status === 'available').length

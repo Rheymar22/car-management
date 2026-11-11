@@ -52,12 +52,28 @@ function PriceSummary({ vehicle, start, end }) {
 const getEmoji = type => type === 'suv' ? '🚙' : type === 'van' ? '🚐' : type === 'motorcycle' ? '🏍️' : '🚗'
 const fmtDatetime = d => d ? new Date(d).toISOString().slice(0, 19).replace('T', ' ') : ''
 
+function toLocalInputValue(d) {
+  const date = new Date(d)
+  if (isNaN(date)) return ''
+  const pad = n => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 export default function BookingNew() {
   const [params] = useSearchParams()
   const navigate  = useNavigate()
   const vehicleId = params.get('vehicle')
   const startParam = params.get('start') || ''
   const endParam   = params.get('end') || ''
+
+  const [pickupDT, setPickupDT] = useState(() => toLocalInputValue(startParam) || toLocalInputValue(new Date()))
+  const [dropoffDT, setDropoffDT] = useState(() => {
+    if (endParam) return toLocalInputValue(endParam)
+    const d = new Date(startParam || Date.now())
+    d.setDate(d.getDate() + 1)
+    return toLocalInputValue(d)
+  })
+  const [dateError, setDateError] = useState('')
 
   const [form, setForm] = useState({
     pickup_location:        LOCATIONS[0],
@@ -78,21 +94,48 @@ export default function BookingNew() {
 
   const mutation = useMutation({
     mutationFn: data => api.post('/bookings', data),
-    onSuccess: ({ data }) => navigate('/payment/' + data.booking.id),
+    onSuccess: ({ data }) => navigate('/bookings', { state: { justBooked: data.booking_ref } }),
     onError: err => {
       if (err.response?.data?.errors) setErrors(err.response.data.errors)
       else setErrors({ general: err.response?.data?.message || 'Booking failed. Please try again.' })
     },
   })
 
+  const nowLocal = toLocalInputValue(new Date())
+
+  useEffect(() => {
+    if (!pickupDT || !dropoffDT) {
+      setDateError('')
+      return
+    }
+    if (pickupDT < nowLocal) {
+      setDateError('Pickup time cannot be in the past.')
+    } else if (dropoffDT <= pickupDT) {
+      setDateError('Return time must be after the pickup time.')
+    } else {
+      setDateError('')
+    }
+  }, [pickupDT, dropoffDT])
+
+  const handlePickupChange = (value) => {
+    setPickupDT(value)
+    if (dropoffDT && value >= dropoffDT) {
+      const d = new Date(value)
+      d.setHours(d.getHours() + 24)
+      setDropoffDT(toLocalInputValue(d))
+    }
+  }
+
   const handleSubmit = e => {
     e.preventDefault()
     setErrors({})
     if (!vehicleId) return
+    if (dateError) return
+
     mutation.mutate({
       vehicle_id:             vehicleId,
-      pickup_datetime:        fmtDatetime(startParam),
-      dropoff_datetime:       fmtDatetime(endParam),
+      pickup_datetime:        fmtDatetime(pickupDT),
+      dropoff_datetime:       fmtDatetime(dropoffDT),
       pickup_location:        form.pickup_location,
       dropoff_location:       form.dropoff_location,
       custom_pickup_address:  form.custom_pickup_address,
@@ -123,14 +166,12 @@ export default function BookingNew() {
       <h1 className="bn-title">Confirm your booking</h1>
 
       <div className="bn-grid">
-        {/* Left — form */}
         <div className="bn-form-col">
           {vLoading ? (
             <div className="bn-card bn-loading">Loading vehicle details...</div>
           ) : vehicle ? (
             <div className="bn-card bn-vehicle-card">
               <div className="bn-vehicle-header">
-                {/* Vehicle image */}
                 <div className="bn-vehicle-img">
                   {vehicle.image_path ? (
                     <img
@@ -153,26 +194,44 @@ export default function BookingNew() {
                   )}
                 </div>
               </div>
-              <div className="bn-dates-row">
-                <div className="bn-date-block">
-                  <div className="bn-date-label">📅 Pickup</div>
-                  <div className="bn-date-val">{startParam ? new Date(startParam).toLocaleString('en-PH', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}) : '—'}</div>
-                </div>
-                <div className="bn-date-arrow">→</div>
-                <div className="bn-date-block">
-                  <div className="bn-date-label">🔄 Return</div>
-                  <div className="bn-date-val">{endParam ? new Date(endParam).toLocaleString('en-PH', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}) : '—'}</div>
-                </div>
-              </div>
             </div>
           ) : null}
 
           <form className="bn-card" onSubmit={handleSubmit}>
-            <h2 className="bn-form-title">Pickup & dropoff</h2>
+            <h2 className="bn-form-title">Pickup & return date/time</h2>
 
             {errors.general && (
               <div className="bn-error-box">{errors.general}</div>
             )}
+
+            <div className="bn-datetime-row">
+              <div className="bn-field" style={{ flex: 1, marginBottom: 0 }}>
+                <label className="bn-label">📅 Pickup</label>
+                <input
+                  type="datetime-local"
+                  className="bn-input"
+                  value={pickupDT}
+                  min={nowLocal}
+                  onChange={e => handlePickupChange(e.target.value)}
+                />
+                {errors.pickup_datetime && <p className="bn-field-err">{errors.pickup_datetime[0]}</p>}
+              </div>
+              <div className="bn-date-arrow" style={{ alignSelf: 'center', marginTop: 18 }}>→</div>
+              <div className="bn-field" style={{ flex: 1, marginBottom: 0 }}>
+                <label className="bn-label">🔄 Return</label>
+                <input
+                  type="datetime-local"
+                  className="bn-input"
+                  value={dropoffDT}
+                  min={pickupDT || nowLocal}
+                  onChange={e => setDropoffDT(e.target.value)}
+                />
+                {errors.dropoff_datetime && <p className="bn-field-err">{errors.dropoff_datetime[0]}</p>}
+              </div>
+            </div>
+            {dateError && <p className="bn-field-err" style={{ marginTop: 8 }}>{dateError}</p>}
+
+            <h2 className="bn-form-title" style={{ marginTop: 24 }}>Pickup & dropoff location</h2>
 
             <div className="bn-field">
               <label className="bn-label">Pickup location</label>
@@ -214,21 +273,20 @@ export default function BookingNew() {
             </div>
 
             <button type="submit"
-              disabled={mutation.isPending || !form.rental_terms_accepted}
+              disabled={mutation.isPending || !form.rental_terms_accepted || !!dateError}
               className="bn-submit-btn">
-              {mutation.isPending ? '⏳ Confirming...' : '✅ Confirm booking & proceed to payment'}
+              {mutation.isPending ? '⏳ Submitting...' : '✅ Submit booking request'}
             </button>
 
-            <p className="bn-secure-note">🔒 Your booking is secured and can be cancelled before the pickup date.</p>
+            <p className="bn-secure-note">🔒 Your request will be reviewed and confirmed by our team before payment is required. You can cancel anytime before pickup.</p>
           </form>
         </div>
 
-        {/* Right — summary */}
         <div className="bn-summary-col">
           <div className="bn-card">
             <h2 className="bn-form-title">Price summary</h2>
             {vehicle
-              ? <PriceSummary vehicle={vehicle} start={startParam} end={endParam} />
+              ? <PriceSummary vehicle={vehicle} start={pickupDT} end={dropoffDT} />
               : <p className="bn-muted">Loading pricing...</p>
             }
           </div>
@@ -266,17 +324,13 @@ export default function BookingNew() {
         .bn-summary-col { display: flex; flex-direction: column; gap: 16px; }
         .bn-card { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px; padding: 20px; }
         .bn-loading { color: #64748b; font-size: 14px; text-align: center; padding: 32px; }
-        .bn-vehicle-card { }
-        .bn-vehicle-header { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
+        .bn-vehicle-header { display: flex; gap: 14px; align-items: flex-start; }
         .bn-vehicle-img { width: 80px; height: 64px; border-radius: 10px; overflow: hidden; background: #f1f5f9; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .bn-vehicle-name { font-size: 17px; font-weight: 700; color: #0f172a; margin-bottom: 3px; }
         .bn-vehicle-meta { font-size: 12px; color: #64748b; margin-bottom: 8px; }
         .bn-tags { display: flex; flex-wrap: wrap; gap: 5px; }
         .bn-tag { background: #f1f5f9; color: #475569; font-size: 11px; padding: 2px 8px; border-radius: 20px; }
-        .bn-dates-row { display: flex; align-items: center; gap: 12px; background: #f8fafc; border-radius: 10px; padding: 12px 14px; }
-        .bn-date-block { flex: 1; }
-        .bn-date-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; margin-bottom: 3px; }
-        .bn-date-val { font-size: 13px; font-weight: 600; color: #0f172a; }
+        .bn-datetime-row { display: flex; align-items: flex-start; gap: 12px; }
         .bn-date-arrow { font-size: 18px; color: #cbd5e1; }
         .bn-form-title { font-size: 15px; font-weight: 700; color: #0f172a; margin: 0 0 16px; }
         .bn-field { margin-bottom: 16px; }
@@ -294,7 +348,6 @@ export default function BookingNew() {
         .bn-submit-btn:hover:not(:disabled) { background: #b91c1c; }
         .bn-submit-btn:disabled { opacity: 0.55; cursor: not-allowed; }
         .bn-secure-note { text-align: center; font-size: 12px; color: #94a3b8; margin: 10px 0 0; }
-        .bn-price-box { }
         .bn-price-row { display: flex; justify-content: space-between; font-size: 13px; color: #475569; padding: 5px 0; border-bottom: 1px dashed #f1f5f9; }
         .bn-discount { color: #16a34a; }
         .bn-price-total { display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; color: #0f172a; padding: 12px 0 8px; }
@@ -311,6 +364,8 @@ export default function BookingNew() {
         @media (max-width: 700px) {
           .bn-grid { grid-template-columns: 1fr; }
           .bn-summary-col { order: -1; }
+          .bn-datetime-row { flex-direction: column; }
+          .bn-date-arrow { display: none; }
         }
       `}</style>
     </div>

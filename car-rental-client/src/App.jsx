@@ -14,6 +14,7 @@ import AdminBookings from './pages/Admin/AdminBookings'
 import AdminCustomers from './pages/Admin/AdminCustomers'
 import AdminLogs from './pages/Admin/AdminLogs'
 import AdminUsers from './pages/Admin/AdminUsers'
+import AdminAnalytics from './pages/Admin/AdminAnalytics'
 
 function PrivateRoute({ children }) {
   const token = useAuthStore(s => s.token)
@@ -30,25 +31,23 @@ function AdminRoute({ children }) {
 export default function App() {
   return (
     <Routes>
-      {/* Public landing page */}
       <Route path="/" element={<Home />} />
       <Route path="/login"    element={<Login />} />
       <Route path="/register" element={<Register />} />
 
-      {/* Protected app routes */}
       <Route element={<PrivateRoute><AppLayout /></PrivateRoute>}>
         <Route path="/vehicles"           element={<VehicleSearch />} />
         <Route path="/bookings"           element={<MyBookings />} />
         <Route path="/bookings/new"       element={<BookingNew />} />
         <Route path="/payment/:bookingId" element={<PaymentPage />} />
 
-        {/* Admin routes */}
         <Route path="/admin"           element={<AdminRoute><AdminDashboard /></AdminRoute>} />
         <Route path="/admin/vehicles"  element={<AdminRoute><AdminVehicles /></AdminRoute>} />
         <Route path="/admin/bookings"  element={<AdminRoute><AdminBookings /></AdminRoute>} />
         <Route path="/admin/customers" element={<AdminRoute><AdminCustomers /></AdminRoute>} />
         <Route path="/admin/logs"      element={<AdminRoute><AdminLogs /></AdminRoute>} />
         <Route path="/admin/users"     element={<AdminRoute><AdminUsers /></AdminRoute>} />
+        <Route path="/admin/analytics" element={<AdminRoute><AdminAnalytics /></AdminRoute>} />
       </Route>
     </Routes>
   )

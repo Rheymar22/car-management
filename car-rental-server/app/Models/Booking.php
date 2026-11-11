@@ -26,6 +26,8 @@ class Booking extends Model
         'discount_amount',
         'late_penalty',
         'total_amount',
+        'has_damage',
+        'damage_notes',
         'rental_terms_accepted',
         'rental_terms_accepted_at',
         'notes',
@@ -41,6 +43,7 @@ class Booking extends Model
         'discount_amount'          => 'decimal:2',
         'late_penalty'             => 'decimal:2',
         'total_amount'             => 'decimal:2',
+        'has_damage'               => 'boolean',
     ];
 
     public function user()
