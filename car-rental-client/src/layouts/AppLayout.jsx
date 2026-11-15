@@ -1,5 +1,7 @@
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../hooks/useAuth'
+import api from '../lib/api'
 
 const ADMIN_NAV = [
   { to: '/admin',           label: 'Dashboard',     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.4"/></svg> },
@@ -22,6 +24,18 @@ export default function AppLayout() {
   const location = useLocation()
   const nav = isAdmin() ? ADMIN_NAV : CUSTOMER_NAV
 
+  const { data: verification } = useQuery({
+    queryKey: ['verification'],
+    queryFn: () => api.get('/verification').then(r => r.data.verification),
+    enabled: !!user && !isAdmin(),
+  })
+
+  const showVerifyBanner =
+    !!verification &&
+    verification.required &&
+    verification.status !== 'verified' &&
+    location.pathname !== '/verification'
+
   const handleLogout = async () => {
     await logout()
     navigate('/')
@@ -36,6 +50,7 @@ export default function AppLayout() {
     <div className="al-root">
       <nav className="al-nav">
         <div className="al-nav-inner">
+
           <Link to={isAdmin() ? '/admin' : '/vehicles'} className="al-logo">
             <img src="/MRPAT pfp.jpg" alt="Roxas Car Rental" className="al-logo-img"
               onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex' }} />
@@ -70,6 +85,14 @@ export default function AppLayout() {
                 <div className="al-user-name">{user?.name}</div>
                 <div className="al-user-role">{user?.role}</div>
               </div>
+              {verification && verification.required && (
+                <Link
+                  to="/verification"
+                  className={'al-ver-chip ' + (verification.status === 'verified' ? 'al-ver-ok' : verification.status === 'pending' ? 'al-ver-wait' : 'al-ver-no')}
+                >
+                  {verification.status === 'verified' ? '✓ Verified' : verification.status === 'pending' ? 'Pending' : 'Unverified'}
+                </Link>
+              )}
             </div>
             <button className="al-logout-btn" onClick={handleLogout}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -101,6 +124,22 @@ export default function AppLayout() {
 
       <main className="al-main">
         <div className="al-content">
+          {showVerifyBanner && (
+            <div className={'al-verify-banner ' + (verification.status === 'pending' ? 'al-verify-pending' : '')}>
+              <div className="al-verify-text">
+                {verification.status === 'pending' ? (
+                  <><strong>Verification in review.</strong> We're checking your documents. You can book once you're verified.</>
+                ) : verification.status === 'rejected' ? (
+                  <><strong>Verification rejected.</strong> Please re-submit your documents to start booking.</>
+                ) : (
+                  <><strong>Your account is unverified.</strong> Submit your driver's license and one other valid ID to start booking.</>
+                )}
+              </div>
+              <Link to="/verification" className="al-verify-btn">
+                {verification.status === 'pending' ? 'View status' : 'Verify now'}
+              </Link>
+            </div>
+          )}
           <Outlet />
         </div>
       </main>
@@ -126,10 +165,18 @@ export default function AppLayout() {
         .al-user-text { display:none; }
         .al-user-name { font-size:13px; font-weight:600; color:#0f172a; }
         .al-user-role { font-size:10px; color:#64748b; text-transform:capitalize; }
+        .al-ver-chip { font-size:11px; font-weight:700; padding:3px 10px; border-radius:20px; white-space:nowrap; text-decoration:none; }
+        .al-ver-ok { background:#d1fae5; color:#065f46; }
+        .al-ver-wait { background:#fef3c7; color:#92400e; }
+        .al-ver-no { background:#fee2e2; color:#991b1b; }
         .al-logout-btn { background:none; border:1.5px solid #e2e8f0; color:#64748b; padding:7px 13px; border-radius:8px; font-size:12px; font-weight:500; cursor:pointer; font-family:'DM Sans',sans-serif; transition:all .15s; white-space:nowrap; display:flex; align-items:center; gap:6px; }
         .al-logout-btn:hover { border-color:#fca5a5; color:#dc2626; }
         .al-main { flex:1; padding-bottom:80px; }
         .al-content { max-width:1200px; margin:0 auto; padding:24px 20px; }
+        .al-verify-banner { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; background:#fef2f2; border:1.5px solid #fecaca; color:#7f1d1d; border-radius:12px; padding:12px 16px; margin-bottom:18px; font-size:13px; line-height:1.5; }
+        .al-verify-pending { background:#fffbeb; border-color:#fde68a; color:#92400e; }
+        .al-verify-btn { background:#dc2626; color:#fff; text-decoration:none; font-size:12px; font-weight:700; padding:8px 14px; border-radius:8px; white-space:nowrap; }
+        .al-verify-pending .al-verify-btn { background:#d97706; }
         .al-bottom-nav { display:none; position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1.5px solid #e2e8f0; z-index:50; padding:6px 0 max(6px,env(safe-area-inset-bottom)); }
         .al-bottom-link { display:flex; flex-direction:column; align-items:center; gap:2px; flex:1; text-decoration:none; border:none; background:none; cursor:pointer; font-family:'DM Sans',sans-serif; padding:4px 0; }
         .al-bottom-icon { display:flex; align-items:center; justify-content:center; color:#64748b; }

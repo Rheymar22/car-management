@@ -5,14 +5,24 @@ import api from "../lib/api";
 
 const TYPES = ["", "sedan", "suv", "van", "motorcycle", "truck"];
 
+// "maintenance" is the stored value; it is displayed as PMS
 const STATUS_META = {
-  available: { label: "Available", className: "bg-green-100 text-green-700" },
-  rented: { label: "Rented", className: "bg-blue-100 text-blue-700" },
-  maintenance: { label: "Maintenance", className: "bg-yellow-100 text-yellow-700" },
-  retired: { label: "Retired", className: "bg-gray-100 text-gray-600" },
+  available: { label: "Available", className: "bg-green-100 text-green-700", hint: "" },
+  rented: { label: "Rented", className: "bg-blue-100 text-blue-700", hint: "" },
+  maintenance: {
+    label: "PMS",
+    className: "bg-yellow-100 text-yellow-700",
+    hint: "Preventive Maintenance Service: this vehicle is being serviced",
+  },
+  retired: { label: "Retired", className: "bg-gray-100 text-gray-600", hint: "" },
 };
 
-function VehicleCard({ vehicle, start, end }) {
+const UNAVAILABLE_TEXT = {
+  maintenance: "In PMS",
+  rented: "Currently rented",
+};
+
+function VehicleCard({ vehicle, start, end, needsVerification }) {
   const meta = STATUS_META[vehicle.status] || STATUS_META.retired;
   const isAvailable = vehicle.status === "available";
 
@@ -55,11 +65,21 @@ function VehicleCard({ vehicle, start, end }) {
             {vehicle.year} • {vehicle.color} • {vehicle.type.toUpperCase()}
           </p>
         </div>
-        <span className={`text-xs px-2 py-1 rounded-full ${meta.className}`}>
+        <span
+          className={`text-xs px-2 py-1 rounded-full ${meta.className}`}
+          title={meta.hint}
+        >
           {meta.label}
         </span>
       </div>
       <p className="text-xs text-gray-400 mb-3">{vehicle.plate_number}</p>
+
+      {vehicle.status === "maintenance" && (
+        <p className="text-xs text-yellow-700 bg-yellow-50 rounded-lg px-2 py-1 mb-3">
+          PMS: undergoing preventive maintenance service, not bookable right now.
+        </p>
+      )}
+
       {vehicle.features?.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-3">
           {vehicle.features.slice(0, 3).map((f) => (
@@ -80,21 +100,33 @@ function VehicleCard({ vehicle, start, end }) {
           <span className="text-xs text-gray-500">/day</span>
         </div>
         {isAvailable ? (
-          <Link
-            to={
-              "/bookings/new?vehicle=" +
-              vehicle.id +
-              "&start=" +
-              (start || "") +
-              "&end=" +
-              (end || "")
-            }
-            className="btn-primary text-xs px-3 py-1.5"
-          >
-            Book now
-          </Link>
+          needsVerification ? (
+            <Link
+              to="/verification"
+              className="btn-secondary text-xs px-3 py-1.5"
+              title="Verify your account to book"
+            >
+              Verify to book
+            </Link>
+          ) : (
+            <Link
+              to={
+                "/bookings/new?vehicle=" +
+                vehicle.id +
+                "&start=" +
+                (start || "") +
+                "&end=" +
+                (end || "")
+              }
+              className="btn-primary text-xs px-3 py-1.5"
+            >
+              Book now
+            </Link>
+          )
         ) : (
-          <span className="text-xs text-gray-400 px-3 py-1.5">Unavailable</span>
+          <span className="text-xs text-gray-400 px-3 py-1.5">
+            {UNAVAILABLE_TEXT[vehicle.status] || "Unavailable"}
+          </span>
         )}
       </div>
     </div>
@@ -126,6 +158,18 @@ export default function VehicleSearch() {
     queryFn: () => api.get("/vehicles").then((r) => r.data),
     enabled: !search,
   });
+
+  // Same query the layout uses, so customers who aren't verified yet
+  // are sent to the verification page instead of the booking form.
+  const { data: verification } = useQuery({
+    queryKey: ["verification"],
+    queryFn: () => api.get("/verification").then((r) => r.data.verification),
+  });
+
+  const needsVerification =
+    !!verification &&
+    verification.required &&
+    verification.status !== "verified";
 
   const vehicles = search ? data?.data : allVehicles?.data;
 
@@ -211,6 +255,7 @@ export default function VehicleSearch() {
             vehicle={v}
             start={filters.start}
             end={filters.end}
+            needsVerification={needsVerification}
           />
         ))}
       </div>

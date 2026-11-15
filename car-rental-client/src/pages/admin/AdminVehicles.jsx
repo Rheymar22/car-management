@@ -4,11 +4,32 @@ import api from '../../lib/api'
 
 const TYPES = ['sedan', 'suv', 'van', 'sports car', 'truck', 'pickup', 'minivan']
 
+// "maintenance" is the stored value; it is displayed everywhere as PMS
 const STATUS_META = {
   available:   { color: '#059669', bg: '#d1fae5', label: 'Available' },
   rented:      { color: '#2563eb', bg: '#dbeafe', label: 'Rented' },
-  maintenance: { color: '#d97706', bg: '#fef3c7', label: 'Maintenance' },
+  maintenance: { color: '#d97706', bg: '#fef3c7', label: 'PMS' },
   retired:     { color: '#64748b', bg: '#f1f5f9', label: 'Retired' },
+}
+
+const SERVICE_TYPES = [
+  { value: 'pms',        label: 'PMS (Preventive Maintenance Service)' },
+  { value: 'oil_change', label: 'Oil change' },
+  { value: 'tires',      label: 'Tires' },
+  { value: 'brakes',     label: 'Brakes' },
+  { value: 'battery',    label: 'Battery' },
+  { value: 'repair',     label: 'Repair' },
+  { value: 'other',      label: 'Other' },
+]
+
+const SERVICE_SHORT = {
+  pms: 'PMS',
+  oil_change: 'Oil change',
+  tires: 'Tires',
+  brakes: 'Brakes',
+  battery: 'Battery',
+  repair: 'Repair',
+  other: 'Other',
 }
 
 const EMPTY_FORM = {
@@ -22,6 +43,252 @@ const TYPE_EMOJI = { suv: '🚙', van: '🚐', truck: '🚛' }
 const getEmoji = t => TYPE_EMOJI[t] || '🚗'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
+// ---- date helpers (dates come from the API as "YYYY-MM-DD..." strings) ----
+const dateOnly = d => (d ? String(d).slice(0, 10) : '')
+
+const fmtDate = d => {
+  const str = dateOnly(d)
+  if (!str) return ''
+  const [y, m, day] = str.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, day)).toLocaleDateString('en-PH', {
+    month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+  })
+}
+
+const daysUntil = d => {
+  const str = dateOnly(d)
+  if (!str) return null
+  const [y, m, day] = str.split('-').map(Number)
+  const now = new Date()
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  return Math.round((Date.UTC(y, m - 1, day) - today) / 86400000)
+}
+
+const todayStr = () => {
+  const d = new Date()
+  const p = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+const firstError = err => {
+  const d = err.response && err.response.data
+  if (d && d.errors) {
+    const k = Object.keys(d.errors)[0]
+    return d.errors[k][0]
+  }
+  return (d && d.message) || 'Something went wrong. Please try again.'
+}
+
+// ---- last PMS / next due block shown on each vehicle card ----
+function ServiceSummary({ vehicle, onOpen }) {
+  const last = vehicle.last_maintenance_date
+  const next = vehicle.next_maintenance_date
+  const days = daysUntil(next)
+
+  let nextStyle = s.maintValue
+  let nextNote = ''
+  if (days !== null) {
+    if (days < 0) {
+      nextStyle = { ...s.maintValue, color: '#dc2626', fontWeight: 700 }
+      nextNote = ' · overdue'
+    } else if (days <= 14) {
+      nextStyle = { ...s.maintValue, color: '#d97706', fontWeight: 700 }
+      nextNote = days === 0 ? ' · due today' : ' · in ' + days + 'd'
+    }
+  }
+
+  return (
+    <button type="button" style={s.maintBox} onClick={onOpen}>
+      <div style={s.maintRow}>
+        <span style={s.maintLabel}>Last PMS / service</span>
+        <span style={s.maintValue}>{last ? fmtDate(last) : 'No record'}</span>
+      </div>
+      <div style={s.maintRow}>
+        <span style={s.maintLabel}>Next due</span>
+        <span style={nextStyle}>{next ? fmtDate(next) + nextNote : 'Not set'}</span>
+      </div>
+      <div style={s.maintLink}>Service log →</div>
+    </button>
+  )
+}
+
+// ---- service log modal ----
+function ServiceLogModal({ vehicle, onClose }) {
+  const qc = useQueryClient()
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({
+    type: 'pms',
+    performed_at: todayStr(),
+    odometer_km: '',
+    cost: '',
+    next_due_at: '',
+    notes: '',
+    mark_available: false,
+  })
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['vehicle-maintenance', vehicle.id],
+    queryFn: () => api.get('/admin/vehicles/' + vehicle.id + '/maintenance').then(r => r.data),
+  })
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['vehicle-maintenance', vehicle.id] })
+    qc.invalidateQueries({ queryKey: ['admin-vehicles-list'] })
+  }
+
+  const addMutation = useMutation({
+    mutationFn: () => {
+      const payload = { type: form.type, performed_at: form.performed_at }
+      if (form.odometer_km !== '') payload.odometer_km = Number(form.odometer_km)
+      if (form.cost !== '') payload.cost = Number(form.cost)
+      if (form.next_due_at) payload.next_due_at = form.next_due_at
+      if (form.notes.trim()) payload.notes = form.notes.trim()
+      if (form.mark_available) payload.mark_available = true
+      return api.post('/admin/vehicles/' + vehicle.id + '/maintenance', payload)
+    },
+    onSuccess: () => {
+      setError('')
+      setForm(f => ({ ...f, odometer_km: '', cost: '', next_due_at: '', notes: '', mark_available: false }))
+      refresh()
+    },
+    onError: err => setError(firstError(err)),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: id => api.delete('/admin/vehicles/' + vehicle.id + '/maintenance/' + id),
+    onSuccess: () => { setError(''); refresh() },
+    onError: err => setError(firstError(err)),
+  })
+
+  const info = (data && data.vehicle) || vehicle
+  const logs = (data && data.logs) || []
+  const currentStatus = info.status
+  const meta = STATUS_META[currentStatus] || STATUS_META.retired
+
+  return (
+    <div style={s.overlay} onClick={onClose}>
+      <div style={s.logModal} onClick={e => e.stopPropagation()}>
+        <div style={s.modalHeader}>
+          <div>
+            <h3 style={s.modalTitle}>Service log</h3>
+            <p style={s.modalSub}>{vehicle.make} {vehicle.model} · {vehicle.plate_number}</p>
+          </div>
+          <button style={s.closeBtn} onClick={onClose}>✕</button>
+        </div>
+
+        <div style={s.logSummary}>
+          <div style={s.logSummaryItem}>
+            <div style={s.logSummaryLabel}>Status</div>
+            <span style={{ ...s.statusBadgeInline, background: meta.bg, color: meta.color }}>{meta.label}</span>
+          </div>
+          <div style={s.logSummaryItem}>
+            <div style={s.logSummaryLabel}>Mileage</div>
+            <div style={s.logSummaryValue}>
+              {info.current_mileage ? Number(info.current_mileage).toLocaleString() + ' km' : '—'}
+            </div>
+          </div>
+          <div style={s.logSummaryItem}>
+            <div style={s.logSummaryLabel}>Last service</div>
+            <div style={s.logSummaryValue}>{info.last_maintenance_date ? fmtDate(info.last_maintenance_date) : 'No record'}</div>
+          </div>
+          <div style={s.logSummaryItem}>
+            <div style={s.logSummaryLabel}>Next due</div>
+            <div style={s.logSummaryValue}>{info.next_maintenance_date ? fmtDate(info.next_maintenance_date) : 'Not set'}</div>
+          </div>
+        </div>
+
+        <div style={s.logFormBox}>
+          <div style={s.logFormTitle}>Add service record</div>
+          {error && <div style={s.errorBoxInline}>{error}</div>}
+
+          <div style={s.logFormGrid}>
+            <div style={s.fieldWrap}>
+              <label style={s.fieldLabel}>Type</label>
+              <select style={s.input} value={form.type} onChange={e => set('type', e.target.value)}>
+                {SERVICE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div style={s.fieldWrap}>
+              <label style={s.fieldLabel}>Date done</label>
+              <input type="date" style={s.input} max={todayStr()} value={form.performed_at}
+                onChange={e => set('performed_at', e.target.value)} />
+            </div>
+            <div style={s.fieldWrap}>
+              <label style={s.fieldLabel}>Odometer (km) <span style={s.optTag}>optional</span></label>
+              <input type="number" min="0" style={s.input} placeholder="45000" value={form.odometer_km}
+                onChange={e => set('odometer_km', e.target.value)} />
+            </div>
+            <div style={s.fieldWrap}>
+              <label style={s.fieldLabel}>Cost (₱) <span style={s.optTag}>optional</span></label>
+              <input type="number" min="0" style={s.input} placeholder="2500" value={form.cost}
+                onChange={e => set('cost', e.target.value)} />
+            </div>
+            <div style={s.fieldWrap}>
+              <label style={s.fieldLabel}>Next PMS due <span style={s.optTag}>optional</span></label>
+              <input type="date" style={s.input} min={form.performed_at} value={form.next_due_at}
+                onChange={e => set('next_due_at', e.target.value)} />
+            </div>
+            <div style={s.fieldWrap}>
+              <label style={s.fieldLabel}>Notes <span style={s.optTag}>optional</span></label>
+              <input style={s.input} placeholder="Changed oil + filter" value={form.notes}
+                onChange={e => set('notes', e.target.value)} />
+            </div>
+          </div>
+
+          {currentStatus === 'maintenance' && (
+            <label style={s.checkRow}>
+              <input type="checkbox" checked={form.mark_available}
+                onChange={e => set('mark_available', e.target.checked)} />
+              <span>Service is done: mark this vehicle Available again</span>
+            </label>
+          )}
+
+          <button
+            style={{ ...s.btnPrimary, opacity: addMutation.isPending ? 0.6 : 1, marginTop: '12px' }}
+            disabled={addMutation.isPending || !form.performed_at}
+            onClick={() => { setError(''); addMutation.mutate() }}
+          >
+            {addMutation.isPending ? 'Saving...' : 'Save service record'}
+          </button>
+        </div>
+
+        <div style={s.logListTitle}>History</div>
+        {isLoading ? (
+          <p style={s.logEmpty}>Loading...</p>
+        ) : logs.length === 0 ? (
+          <p style={s.logEmpty}>No service records yet.</p>
+        ) : (
+          <div style={s.logList}>
+            {logs.map(log => (
+              <div key={log.id} style={s.logItem}>
+                <div style={s.logItemTop}>
+                  <span style={s.logType}>{SERVICE_SHORT[log.type] || log.type}</span>
+                  <span style={s.logDate}>{fmtDate(log.performed_at)}</span>
+                  <button
+                    style={s.logDel}
+                    title="Delete record"
+                    onClick={() => { if (window.confirm('Delete this service record?')) deleteMutation.mutate(log.id) }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div style={s.logMeta}>
+                  {log.odometer_km ? <span>{Number(log.odometer_km).toLocaleString()} km</span> : null}
+                  {log.cost ? <span>₱{Number(log.cost).toLocaleString()}</span> : null}
+                  {log.next_due_at ? <span>Next due {fmtDate(log.next_due_at)}</span> : null}
+                  {log.creator ? <span>by {log.creator.name}</span> : null}
+                </div>
+                {log.notes ? <div style={s.logNotes}>{log.notes}</div> : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function AdminVehicles() {
   const qc = useQueryClient()
   const fileInputRef = useRef(null)
@@ -33,6 +300,7 @@ export default function AdminVehicles() {
   const [imagePreview, setImagePreview] = useState(null)
   const [errors, setErrors]             = useState({})
   const [statusModal, setStatusModal]   = useState(null)
+  const [serviceVehicle, setServiceVehicle] = useState(null)
   const [dragOver, setDragOver]         = useState(false)
   const [filterType, setFilterType]     = useState('')
   const [filterStatus, setFilterStatus] = useState('')
@@ -41,7 +309,7 @@ export default function AdminVehicles() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-vehicles-list'],
-    queryFn: () => api.get('/vehicles').then(r => r.data),
+    queryFn: () => api.get('/vehicles', { params: { per_page: 100 } }).then(r => r.data),
   })
 
   const resetForm = () => {
@@ -89,7 +357,7 @@ export default function AdminVehicles() {
 
   const createMutation = useMutation({
     mutationFn: () => api.post('/admin/vehicles', buildFormData(), { headers: { 'Content-Type': 'multipart/form-data' } }),
-    onSuccess: () => { qc.invalidateQueries(['admin-vehicles-list']); resetForm() },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-vehicles-list'] }); resetForm() },
     onError: err => setErrors(err.response?.data?.errors || { general: [err.response?.data?.message || 'Failed to save.'] }),
   })
 
@@ -98,18 +366,18 @@ export default function AdminVehicles() {
       const fd = buildFormData(); fd.append('_method', 'PUT')
       return api.post(`/admin/vehicles/${editVehicle.id}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
     },
-    onSuccess: () => { qc.invalidateQueries(['admin-vehicles-list']); resetForm() },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-vehicles-list'] }); resetForm() },
     onError: err => setErrors(err.response?.data?.errors || { general: [err.response?.data?.message || 'Failed to update.'] }),
   })
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }) => api.patch(`/admin/vehicles/${id}/status`, { status }),
-    onSuccess: () => { qc.invalidateQueries(['admin-vehicles-list']); setStatusModal(null) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-vehicles-list'] }); setStatusModal(null) },
   })
 
   const deleteMutation = useMutation({
     mutationFn: id => api.delete('/admin/vehicles/' + id),
-    onSuccess: () => qc.invalidateQueries(['admin-vehicles-list']),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-vehicles-list'] }),
   })
 
   const isPending = createMutation.isPending || updateMutation.isPending
@@ -119,6 +387,13 @@ export default function AdminVehicles() {
     (!filterStatus || v.status === filterStatus)
   )
 
+  const availableCount = allVehicles.filter(v => v.status === 'available').length
+  const pmsCount = allVehicles.filter(v => v.status === 'maintenance').length
+  const overdueCount = allVehicles.filter(v => {
+    const d = daysUntil(v.next_maintenance_date)
+    return d !== null && d < 0
+  }).length
+
   return (
     <div style={s.page}>
 
@@ -126,7 +401,12 @@ export default function AdminVehicles() {
       <div style={s.header}>
         <div>
           <h1 style={s.pageTitle}>Vehicle Fleet</h1>
-          <p style={s.pageSub}>{allVehicles.length} vehicles · {allVehicles.filter(v=>v.status==='available').length} available</p>
+          <p style={s.pageSub}>
+            {allVehicles.length} vehicles · {availableCount} available · {pmsCount} in PMS
+            {overdueCount > 0 && (
+              <span style={{ color: '#dc2626', fontWeight: 600 }}> · {overdueCount} PMS overdue</span>
+            )}
+          </p>
         </div>
         {!showForm && (
           <button style={s.btnPrimary} onClick={() => { resetForm(); setShowForm(true) }}>
@@ -134,6 +414,15 @@ export default function AdminVehicles() {
           </button>
         )}
       </div>
+
+      {/* ── PMS DEFINITION ── */}
+      {!showForm && allVehicles.length > 0 && (
+        <div style={s.pmsInfo}>
+          <strong>PMS</strong> = Preventive Maintenance Service: scheduled servicing (oil change, inspection and
+          similar work) done to prevent breakdowns. A vehicle in PMS can't be booked. Open a vehicle's
+          <strong> Service log</strong> to record its last PMS and set the next due date.
+        </div>
+      )}
 
       {/* ── FILTERS ── */}
       {!showForm && allVehicles.length > 0 && (
@@ -302,23 +591,29 @@ export default function AdminVehicles() {
             </div>
             <div style={s.modalBtns}>
               {[
-                { s: 'available',   label: 'Available',   icon: '✅' },
-                { s: 'maintenance', label: 'Maintenance',  icon: '🔧' },
-                { s: 'retired',     label: 'Retired',      icon: '🚫' },
-              ].map(({ s: status, label, icon }) => {
+                { s: 'available',   label: 'Available', icon: '✅', desc: 'Ready to rent' },
+                { s: 'maintenance', label: 'PMS',       icon: '🔧', desc: 'Preventive Maintenance Service. Not bookable while in PMS' },
+                { s: 'retired',     label: 'Retired',   icon: '🚫', desc: 'Removed from the fleet' },
+              ].map(({ s: status, label, icon, desc }) => {
                 const meta = STATUS_META[status]
                 return (
                   <button key={status}
                     style={{ ...s.statusBtn, background: meta.bg, color: meta.color, border: `1.5px solid ${meta.bg}` }}
                     onClick={() => statusMutation.mutate({ id: statusModal.id, status })}
                     disabled={statusMutation.isPending}>
-                    {icon} {label}
+                    <div>{icon} {label}</div>
+                    <div style={s.statusBtnDesc}>{desc}</div>
                   </button>
                 )
               })}
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── SERVICE LOG MODAL ── */}
+      {serviceVehicle && (
+        <ServiceLogModal vehicle={serviceVehicle} onClose={() => setServiceVehicle(null)} />
       )}
 
       {/* ── VEHICLES GRID ── */}
@@ -405,6 +700,8 @@ export default function AdminVehicles() {
                       <div style={s.rateSecondary}>₱{Number(v.hourly_rate).toLocaleString()}/hr</div>
                     )}
                   </div>
+
+                  <ServiceSummary vehicle={v} onOpen={() => setServiceVehicle(v)} />
                 </div>
 
                 {/* Actions */}
@@ -457,6 +754,9 @@ const s = {
   btnPrimary: { background: '#dc2626', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '9px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: '6px', transition: 'background .15s' },
   btnGhost: { background: 'none', border: '1.5px solid #e2e8f0', color: '#475569', padding: '9px 18px', borderRadius: '9px', fontSize: '13px', fontWeight: '500', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" },
 
+  // PMS INFO
+  pmsInfo: { background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '10px', padding: '10px 14px', fontSize: '12px', lineHeight: '1.6', marginBottom: '16px' },
+
   // FILTERS
   filters: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' },
   filterSelect: { border: '1.5px solid #e2e8f0', borderRadius: '8px', padding: '7px 12px', fontSize: '13px', color: '#0f172a', background: '#fff', fontFamily: "'DM Sans', sans-serif", cursor: 'pointer' },
@@ -470,6 +770,7 @@ const s = {
   formSub: { fontSize: '13px', color: '#64748b', margin: 0 },
   closeBtn: { background: 'none', border: 'none', fontSize: '16px', color: '#94a3b8', cursor: 'pointer', padding: '4px 8px', borderRadius: '6px', lineHeight: 1 },
   errorBox: { display: 'flex', alignItems: 'center', gap: '10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', padding: '12px 16px', margin: '0 24px 16px', fontSize: '13px', color: '#b91c1c' },
+  errorBoxInline: { background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '8px 12px', marginBottom: '10px', fontSize: '12px', color: '#b91c1c' },
   formBody: { display: 'flex', gap: '24px', padding: '0 24px', flexWrap: 'wrap' },
   formLeft: { display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '220px', flex: '0 0 220px' },
   formRight: { flex: 1, minWidth: '280px' },
@@ -494,16 +795,46 @@ const s = {
   dzTitle: { fontSize: '14px', fontWeight: '600', color: '#0f172a', margin: '0 0 4px' },
   dzSub: { fontSize: '13px', color: '#64748b', margin: '0 0 6px' },
   dzHint: { fontSize: '11px', color: '#94a3b8', margin: 0 },
-  removePhotoBtn: { background: '#fee2e2', border: 'none', color: '#dc2626', fontSize: '12px', fontWeight: '600', padding: '5px 12px', borderRadius: '6px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif', width: '100%', textAlign: 'center" },
+  removePhotoBtn: { background: '#fee2e2', border: 'none', color: '#dc2626', fontSize: '12px', fontWeight: '600', padding: '5px 12px', borderRadius: '6px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", width: '100%', textAlign: 'center' },
 
   // OVERLAY + MODAL
-  overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+  overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', overflowY: 'auto' },
   modal: { background: '#fff', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '340px', boxShadow: '0 24px 64px rgba(0,0,0,0.2)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' },
   modalTitle: { fontSize: '16px', fontWeight: '800', color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.01em' },
   modalSub: { fontSize: '13px', color: '#64748b', margin: 0 },
   modalBtns: { display: 'flex', flexDirection: 'column', gap: '8px' },
   statusBtn: { border: 'none', padding: '13px', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", textAlign: 'left', transition: 'opacity .15s' },
+  statusBtnDesc: { fontSize: '11px', fontWeight: '500', opacity: 0.85, marginTop: '3px' },
+
+  // SERVICE SUMMARY ON CARD
+  maintBox: { display: 'block', width: '100%', textAlign: 'left', background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '10px', padding: '9px 11px', marginTop: '12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" },
+  maintRow: { display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '12px', marginBottom: '3px' },
+  maintLabel: { color: '#94a3b8' },
+  maintValue: { color: '#334155', fontWeight: '500', textAlign: 'right' },
+  maintLink: { fontSize: '11px', fontWeight: '700', color: '#dc2626', marginTop: '4px' },
+
+  // SERVICE LOG MODAL
+  logModal: { background: '#fff', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '640px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.2)' },
+  logSummary: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '16px' },
+  logSummaryItem: { background: '#f8fafc', borderRadius: '10px', padding: '9px 10px' },
+  logSummaryLabel: { fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#94a3b8', marginBottom: '4px' },
+  logSummaryValue: { fontSize: '12px', fontWeight: '700', color: '#0f172a' },
+  statusBadgeInline: { display: 'inline-block', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '700' },
+  logFormBox: { border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '14px', marginBottom: '18px' },
+  logFormTitle: { fontSize: '13px', fontWeight: '800', color: '#0f172a', marginBottom: '10px' },
+  logFormGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' },
+  checkRow: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#334155', marginTop: '12px', cursor: 'pointer' },
+  logListTitle: { fontSize: '13px', fontWeight: '800', color: '#0f172a', marginBottom: '8px' },
+  logEmpty: { fontSize: '13px', color: '#94a3b8', margin: 0 },
+  logList: { display: 'flex', flexDirection: 'column', gap: '8px' },
+  logItem: { border: '1.5px solid #f1f5f9', borderRadius: '10px', padding: '10px 12px' },
+  logItemTop: { display: 'flex', alignItems: 'center', gap: '10px' },
+  logType: { background: '#fef3c7', color: '#92400e', fontSize: '11px', fontWeight: '700', padding: '2px 9px', borderRadius: '20px' },
+  logDate: { fontSize: '12px', color: '#334155', fontWeight: '600', flex: 1 },
+  logDel: { background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '13px', padding: '2px 6px' },
+  logMeta: { display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: '12px', color: '#64748b', marginTop: '5px' },
+  logNotes: { fontSize: '12px', color: '#475569', marginTop: '5px' },
 
   // EMPTY
   emptyCard: { background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: '16px', padding: '60px 24px', textAlign: 'center' },
